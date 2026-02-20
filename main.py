@@ -2,7 +2,10 @@
 import os
 import openai
 import json
+import re
 from datetime import datetime
+
+from sympy import content
 
 client = openai.OpenAI(
     # Set your API key in the environment variable `DEEPSEEK_API_KEY` before running this code
@@ -20,39 +23,20 @@ def list_files(directory="."):
     except Exception as e:
         return f"ERROR: {str(e)}"
 
-tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_current_time",
-            "description": "Get the current date and time",
-            "parameters": {"type": "object", "properties": {}}
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_files",
-            "description": "list files' name in certain directory",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "directory": {
-                        "type": "string",
-                        "description": "directory path, default is current directory"
-                    }
-                }
-            }
-        }
-    },
-]
+TOOLS = {
+    "get_current_time": get_current_time,
+    "list_files": list_files,
+}
+
+with open("prompt.txt", 'r') as file:
+    SYSTEM_PROMPT=file.read()
 
 def run_agent():
-    messages = [
+    chat_history = [
         # system   : global instructions
         # user     : user input
         # assistant: model output
-        {"role": "system", "content": "You are a helpful assistant"},
+        {"role": "system", "content": SYSTEM_PROMPT},
     ]
     
     print("program started")
@@ -63,55 +47,41 @@ def run_agent():
         if user_input.lower() == 'exit':
             print("Exiting the program.")
             break
-        messages.append({"role": "user", "content": user_input})
+        chat_history.append({"role": "user", "content": user_input})
         
-        try:
-            response = client.chat.completions.create(
-                model="deepseek-chat",
-                messages=messages,
-                tools=tools,
-                stream=False
-            )
-
-            response_message = response.choices[0].message
-            # 1. if the model is calling a tool
-            if response_message.tool_calls:
-                messages.append(response_message)
-                for tool_call in response_message.tool_calls:
-                    function_name = tool_call.function.name
-                    function_args = json.loads(tool_call.function.arguments)
-                    print(f"system: Agent is calling tool: {function_name} with arguments: {function_args}")
-                    # 2. execute the tool function and get the result
-                    if function_name == "get_current_time":
-                        result = get_current_time()
-                    elif function_name == "list_files":
-                        directory = function_args.get("directory", ".")
-                        result = list_files(directory)
-                    else:
-                        result = f"ERROR: Unknown function: {function_name}"
-                    print(f"system: Tool response: {result}")
-                    # 3. append the tool response
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": function_name,
-                        "content": result
-                    })
-                # 4. finish call tolls, call model with the tool response
-                second_response = client.chat.completions.create(
+        for i in range(5):
+            try:
+                response = client.chat.completions.create(
                     model="deepseek-chat",
-                    messages=messages,
+                    messages=chat_history,
+                    stop=["Observation:"]
                 )
-                final_output = second_response.choices[0].message.content
-                print(f"Assistant: {final_output}")
-                messages.append({"role": "assistant", "content": final_output})
-            else:
-                # the model is not calling any tool
-                final_output = response_message.content
-                print(f"Assistant: {final_output}")
-                messages.append({"role": "assistant", "content": final_output})
-        except Exception as e:
-            print(f"An error occurred: {e}")
+                content = response.choices[0].message.content
+                chat_history.append({"role": "assistant", "content": content})
+                print(f"--- Reasoning Turns {i+1} ---")
+                print(content)
+                
+                if "Final Answer:" in content:
+                    break
+
+                action_match = re.search(r"Action:\s*(\w+)\[(.*)\]", content)
+                if action_match:
+                    tool_name = action_match.group(1)
+                    tool_args = action_match.group(2)
+                    if tool_name in TOOLS:
+                        if tool_args.strip() == "":
+                            observation = TOOLS[tool_name]()
+                        else:
+                            observation = TOOLS[tool_name](tool_args)
+                        print(f"Observation: {observation}\n")
+                        chat_history.append({"role": "user", "content": f"Observation: {observation}"})
+                    else:
+                        chat_history.append({"role": "user", "content": f"Observation: Error: Unknown tool {tool_name}"})
+                else:
+                    chat_history.append({"role": "user", "content": "Observation: Please continue to give Action or Final Answer."})
+            except Exception as e:
+                print(f"An error occurred: {e}")
+                break
 
 if __name__ == "__main__":
     run_agent()
