@@ -26,11 +26,17 @@ chat_history = [
 
 ## Step 3: ReAct
 
-在 ``SYSTEM_PROMPT`` 中加入 ``Thought-Action-Observation`` 循环
+在 ``SYSTEM_PROMPT`` 中加入 ``Thought-Action-Observation`` 循环  
 
 ## Step 4: RAG
 
-TBD
+通过 `chromadb` 实现检索增强生成 (RAG: Retrieval-Augmented Generation)  
+
+1. 提前在 `knowledge` 目录下放入可以被检索的文本文件
+2. 将文本 (分段) 转换为高维向量 (Embedding)，建立向量数据库
+3. 将用户输入转换为向量，匹配数据库中距离最近的片段
+
+需要提前运行 `tool_rag.py` 加载文档，后续每次运行 `main.py` 都不用重新加载  
 
 ## Step 5: MCP
 

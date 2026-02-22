@@ -14,6 +14,7 @@ Tools you have:
 - list_files[{"directory": "."}]: List files in a directory. Default is ".".
 - read_file[{"filename": "name.txt"}]: Read file content.
 - write_file[{"filename": "name.txt", "content": "code here"}]: Write content to file.
+- search_docs[{"query": "search keywords"}]: Search private knowledge base to answer questions about specific facts or documents.
 
 IMPORTANT:
 1. The parameters inside [] must be a valid JSON object.

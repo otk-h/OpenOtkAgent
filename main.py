@@ -3,7 +3,9 @@ import os
 import openai
 import json
 import re
-from datetime import datetime
+
+from tool_normal import *
+from tool_rag import load_documents, search_docs
 
 client = openai.OpenAI(
     # Set your API key in the environment variable `DEEPSEEK_API_KEY` before running this code
@@ -11,36 +13,12 @@ client = openai.OpenAI(
     base_url="https://api.deepseek.com"
 )
 
-def get_current_time():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-def list_files(directory="."):
-    try:
-        files = os.listdir(directory)
-        return f"DIR {directory}: " + ", ".join(files)
-    except Exception as e:
-        return f"ERROR: {str(e)}"
-    
-def read_file(filename):
-    try:
-        with open(filename, 'r', encoding='utf-8') as file:
-            return file.read()
-    except Exception as e:
-        return f"ERROR: {str(e)}"
-
-def write_file(filename, content):
-    try:
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write(content)
-        return f"SUCCESS: File {filename} has been written."
-    except Exception as e:
-        return f"ERROR: {str(e)}"
-
 TOOLS = {
     "get_current_time": get_current_time,
     "list_files": list_files,
     "read_file": read_file,
     "write_file": write_file,
+    "search_docs": search_docs,
 }
 
 def run_agent():
@@ -100,6 +78,6 @@ def run_agent():
                 chat_history.append({"role": "user", "content": "Observation: Please continue to give Action or Final Answer."})
                 break
     print("Agent session ended.")
-                    
+
 if __name__ == "__main__":
     run_agent()
