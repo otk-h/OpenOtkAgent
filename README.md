@@ -36,7 +36,7 @@ chat_history = [
 2. 将文本 (分段) 转换为高维向量 (Embedding)，建立向量数据库
 3. 将用户输入转换为向量，匹配数据库中距离最近的片段
 
-需要提前运行 `tool_rag.py` 加载文档，后续每次运行 `main.py` 都不用重新加载  
+需要提前运行 `rag_loader.py` 加载文档，后续每次运行 `agent.py` 都不用重新加载  
 
 ## Step 5: MCP
 
