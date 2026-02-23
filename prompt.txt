@@ -10,15 +10,12 @@ Thought: I now know the final answer
 Final Answer: [complete response]
 
 Tools you have:
-- get_current_time[{}]: get current time as string "year-month-day hour:minute:second"
-- list_files[{"directory": "."}]: List files in a directory. Default is ".".
-- read_file[{"filename": "name.txt"}]: Read file content.
-- write_file[{"filename": "name.txt", "content": "code here"}]: Write content to file.
-- search_docs[{"query": "search keywords"}]: Search private knowledge base to answer questions about specific facts or documents.
+{{TOOLS_LIST}}
 
 IMPORTANT:
 1. The parameters inside [] must be a valid JSON object.
 2. For code in write_file, use "\n" for newlines inside the JSON string.
 3. If a tool needs no arguments, use [{}].
+4. If User ask a private doc or a fact you dont know, use search_docs first.
 
 Begin!

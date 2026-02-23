@@ -40,4 +40,13 @@ chat_history = [
 
 ## Step 5: MCP
 
-TBD
+将工具封装在独立的 `MCP Server` 中，Agent 链接 Server 后自动发现并使用工具  
+
+1. MCP Host: 与 LLM 交互，管理与 MCP Server 的链接
+2. MCP Server: 独立进程，暴露数据，函数，模板
+3. Transport: 用 JSON 进行 Host 和 Server 间通信
+
+对过去代码的重构：  
+
+1. `prompt.txt` 变为模板，启动 agent 时动态生成
+2. 将 RAG 功能封装，与其他工具一起放入 MCP 工具
