@@ -1,10 +1,7 @@
 # Please install mcp first: `pip install mcp`
 from mcp.server.fastmcp import FastMCP
-# import psutil
-# import platform
-# import sys
 from datetime import datetime
-from rag_engine import rag_instance
+import asyncio
 import os
 
 mcp = FastMCP("SystemMonitor")
@@ -43,16 +40,10 @@ def write_file(filename: str, content: str) -> str:
 # ---------- RAG Tools ----------
 
 @mcp.tool()
-def search_docs(query: str) -> str:
-    return rag_instance.query(query)
-
-# @mcp.tool()
-# def get_system_stats():
-#     """获取当前系统的 CPU 和内存使用率"""
-#     # interval=1 会阻塞 1 秒，对演示友好
-#     cpu_usage = psutil.cpu_percent(interval=0.1)
-#     memory = psutil.virtual_memory()
-#     return f"OS: {platform.system()}, CPU: {cpu_usage}%, Memory: {memory.percent}%"
+async def search_docs(query: str) -> str:
+    from rag.rag_engine import rag_instance
+    result = await asyncio.to_thread(rag_instance.query, query)
+    return result
 
 if __name__ == "__main__":
     mcp.run()
