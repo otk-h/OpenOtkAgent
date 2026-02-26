@@ -19,12 +19,16 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from pydantic import BaseModel, Field
 
+from skill_manager import SkillManager, SkillDecision
+
 with open("prompt/prompt_Planner.txt", 'r') as file:
     PROMPT_PLANNER = file.read()
 with open("prompt/prompt_RePlanner.txt", 'r') as file:
     PROMPT_REPLANNER = file.read()
 with open("prompt/prompt_Executor.txt", 'r') as file:
     PROMPT_EXECUTOR = file.read()
+with open("prompt/prompt_Learner.txt", 'r') as file:
+    PROMPT_LEARNER = file.read()
 
 MODEL_NAME = "deepseek-chat"
 API_KEY = os.environ.get('DEEPSEEK_API_KEY')
@@ -59,7 +63,7 @@ class PlanExecuteState(TypedDict):
     
     input: str
     plan: List[str]
-    past_steps: Annotated[List[str], operator.add]
+    past_steps: List[str]
     response: Optional[str]
 
 # ---------- Node ----------
@@ -73,18 +77,18 @@ class Agent:
             base_url=BASE_URL,
             temperature=0,
         )
-        # self.model_planner = self.model.with_structured_output(Plan)
-        # self.model_replanner = self.model.with_structured_output(Act)
+        self.skill_manager = SkillManager()
         self.model_planner = self.model.with_structured_output(Act, method="function_calling")
         self.model_replanner = self.model.with_structured_output(Act, method="function_calling")
         self.model_executor = None
+        self.model_learner = self.model.with_structured_output(SkillDecision, method="function_calling")
         
         self.tools = []
     
     async def initialize_tools(self):
         # 1. get MCP tools
         mcp_tools = (await self.mcp_session.list_tools()).tools
-        # 2. render tools for LLM
+        # 3. render tools for LLM
         self.tools = [{
             "type": "function",
             "function": {
@@ -103,14 +107,17 @@ class Agent:
         prompt_str = prompt_template.format(
             date = datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             tools = self.tools,
-            query = state["input"],
+            skills = self.skill_manager.get_skills_prompt(),
         )
-        prompt = state.get("global_history", []) + [HumanMessage(content=prompt_str)]
+        prompt = [SystemMessage(content=prompt_str)] + state.get("global_history", [])
         decision = await self.model_planner.ainvoke(prompt)
         
         if isinstance(decision.action, Response):
             print(f"   - Simple query detected, responding directly.")
-            return {"response": decision.action.response}
+            return {
+                "response": decision.action.response,
+                "global_history":[AIMessage(content=decision.action.response)],
+            }
         else:
             print(f"   - Updated plan: {decision.action.steps}")
             return {"plan": decision.action.steps}
@@ -120,16 +127,18 @@ class Agent:
         print(f"\n[Replanner] Reviewing progress...")
         prompt_template = ChatPromptTemplate.from_template(PROMPT_REPLANNER)
         prompt_str = prompt_template.format(
-            date = datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             query = state["input"],
             completed_steps = state['past_steps'],
             remaining_steps = state['plan'],
         )
-        prompt = state.get("global_history", []) + [HumanMessage(content=prompt_str)]
+        prompt = [SystemMessage(content=prompt_str)] + state.get("global_history", [])
         decision = await self.model_replanner.ainvoke(prompt)
         
         if isinstance(decision.action, Response):
-            return {"response": decision.action.response}
+            return {
+                "response": decision.action.response,
+                "global_history": [AIMessage(content=decision.action.response)],
+            }
         else:
             print(f"   - Updated plan: {decision.action.steps}")
             return {"plan": decision.action.steps}
@@ -180,10 +189,32 @@ class Agent:
             step_summary = "Executor loop reached limit without a text summary."
         
         return {
-            "past_steps": [f"Step: {current_step} | Result: {step_summary}"],
+            "past_steps": state.get("past_steps", []) +[f"Step: {current_step} | Result: {step_summary}"],
             "plan": state["plan"][1:],
             "internal_history": [],
         }
+    
+    async def learner(self, state: PlanExecuteState):
+        if not state.get("past_steps"):
+            return {}
+        print(f"[Learner] Reflecting on task to extract skills.")
+        prompt_template = ChatPromptTemplate.from_template(PROMPT_LEARNER)
+        prompt_str = prompt_template.format(
+            input = state["input"],
+            past_steps = "\n".join(state["past_steps"]),
+            response = state.get("response", "No response recorded.")
+        )
+        prompt = [SystemMessage(content=prompt_str)]
+        try:
+            decision = await self.model_learner.ainvoke(prompt)
+            if decision.is_skill and decision.skill:
+                self.skill_manager.save_skill(decision.skill)
+            else:
+                print("   - Task too specific or simple, no skill extracted.")
+        except Exception as e:
+            print(f"   - Failed to extract skill: {e}")
+        
+        return {}
     
     def build_graph(self):
         workflow = StateGraph(PlanExecuteState)
@@ -191,18 +222,20 @@ class Agent:
         workflow.add_node("planner", self.planner)
         workflow.add_node("executor", self.executor)
         workflow.add_node("replanner", self.replanner)
+        workflow.add_node("learner", self.learner)
         workflow.set_entry_point("planner")
         
         workflow.add_edge("executor", "replanner")
+        workflow.add_edge("learner", END)
         
         def after_plan(state: PlanExecuteState):
             if state.get("response") and not state.get("plan"):
-                return "end"
+                return "learner"
             return "execute"
         
         def after_replan(state: PlanExecuteState):
             if state.get("response"):
-                return "end"
+                return "learner"
             return "execute"
         
         workflow.add_conditional_edges(
@@ -210,7 +243,7 @@ class Agent:
             after_plan,
             {
                 "execute": "executor",
-                "end": END
+                "learner": "learner",
             }
         )
         
@@ -219,7 +252,7 @@ class Agent:
             after_replan,
             {
                 "execute": "executor",
-                "end": END
+                "learner": "learner",
             }
         )
         
@@ -266,13 +299,7 @@ async def main():
                 
                 async for event in graph.astream(state, config=config):
                     for _, output in event.items():
-                        if "response" in output and output["response"]:
-                            await graph.aupdate_state(
-                                config,
-                                {
-                                    "global_history": [AIMessage(content=output["response"])]
-                                }
-                            )
+                        if output and "response" in output and output["response"]:
                             print(f"Assistant: {output['response']}")
 
 if __name__ == "__main__":

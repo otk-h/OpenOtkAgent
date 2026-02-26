@@ -4,6 +4,8 @@ from datetime import datetime
 import asyncio
 import os
 
+from rag.rag_engine import rag_instance
+
 mcp = FastMCP("SystemMonitor")
 
 # ---------- Local Tools ----------
@@ -41,7 +43,6 @@ def write_file(filename: str, content: str) -> str:
 
 @mcp.tool()
 async def search_docs(query: str) -> str:
-    from rag.rag_engine import rag_instance
     result = await asyncio.to_thread(rag_instance.query, query)
     return result
 

@@ -18,6 +18,17 @@ chat_history = [
 
 对每个用户输入或每轮思考，将所有 chat_history 重新输入给大模型，实现连续对话  
 
+### 1.1 Memory Tips 1
+
+组装 prompt 时，需要考虑不同提示词的顺序，否则大概率失忆
+
+### 1.2 Memory Tips 2
+
+如果输入一个巨大的文本，因为选择的 LLM 支持巨大上下文，所以可以硬读，但是 Prompt 会瞬间爆炸  
+
+1. 要求 Agent 在读入巨大文本时简化
+2. 将读入内容存入 WorkSpace，回复 "已读取并存入暂存 ID 114514"，后续读取共享工作区内容，保持 Prompt 干净
+
 ## Step 2: Function Calling
 
 提前编码可以让大模型调用的工具，如文件读写等。在 ``SYSTEM_PROMPT`` 中严格定义输出格式，根据大模型输出结果调用相应工具  
@@ -185,4 +196,5 @@ async for event in graph.astream(state, config=config):
 
 ## Step 8: Skill
 
-TBD
+执行 `Planner` 前，搜索是否有相关技能，若有，直接输出预设步骤  
+执行 `Replanner` 后，增加 `Learner` 节点，泛化该次任务流程并保存  
